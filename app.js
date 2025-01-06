@@ -5,9 +5,10 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
+const uri = 'mongodb+srv://jeetendrasinghrathore1:B2uqhdlmpbcFv8B4@cluster1.zahwy.mongodb.net/?retryWrites=true&w=majority&appName=cluster1'
 
 // MongoDB Connection - removed deprecated options
-mongoose.connect('mongodb+srv://jeetendrasinghrathore1:B2uqhdlmpbcFv8B4@cluster1.zahwy.mongodb.net/?retryWrites=true&w=majority&appName=cluster1')
+mongoose.connect(uri)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.log('MongoDB connection error:', err));
 
