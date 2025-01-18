@@ -14,7 +14,7 @@ const createProject = async (req, res) => {
       });
     }
 
-    // Handle file uploads
+    // Handle file uploads  
     const mainImage = req.files['mainImage'][0].filename;
     const otherImages = req.files['otherImages'] 
       ? req.files['otherImages'].map(file => file.filename)

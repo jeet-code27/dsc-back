@@ -5,8 +5,8 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-const uri = 'mongodb+srv://jeetendrasinghrathore1:B2uqhdlmpbcFv8B4@cluster1.zahwy.mongodb.net/?retryWrites=true&w=majority&appName=cluster1'
-
+// const uri = 'mongodb+srv://jeetendrasinghrathore1:B2uqhdlmpbcFv8B4@cluster1.zahwy.mongodb.net/?retryWrites=true&w=majority&appName=cluster1'
+const uri = "mongodb://localhost:27017/architecture_db"
 // MongoDB Connection - removed deprecated options
 mongoose.connect(uri)
   .then(() => console.log('MongoDB Connected'))
