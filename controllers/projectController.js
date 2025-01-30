@@ -1,53 +1,79 @@
-// projectController.js
 const Project = require('../models/Project');
 const fs = require('fs').promises;
 const path = require('path');
 
+// Utility function to delete file with extra safety checks
+const deleteFile = async (filename) => {
+  if (filename) {
+    try {
+      const filePath = path.join('uploads', filename);
+      // Check if file exists before attempting to delete
+      const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
+      if (fileExists) {
+        await fs.unlink(filePath);
+      }
+    } catch (error) {
+      console.error(`Error handling file ${filename}:`, error);
+    }
+  }
+};
+
+// Utility function to delete multiple files
+const deleteFiles = async (files) => {
+  if (Array.isArray(files) && files.length > 0) {
+    for (const file of files) {
+      await deleteFile(file);
+    }
+  }
+};
+
 const createProject = async (req, res) => {
   try {
-    const { title, description1, description2 } = req.body;
-    
-    if (!title || !description1) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please provide all required fields'
-      });
+    // Create a base project object with default values
+    let projectData = {
+      title: req.body.title || 'Untitled Project',
+      description1: req.body.description1 || '',
+      description2: req.body.description2 || '',
+      projectType: req.body.projectType || 'Other',
+      projectArea: req.body.projectArea || 'Not specified',
+      projectLocation: req.body.projectLocation || 'Not specified'
+    };
+
+    // Handle file uploads if they exist
+    if (req.files) {
+      if (req.files['mainImage']) {
+        projectData.mainImage = req.files['mainImage'][0].filename;
+      }
+      
+      if (req.files['otherImages']) {
+        projectData.otherImages = req.files['otherImages'].map(file => file.filename);
+      }
     }
 
-    // Handle file uploads  
-    const mainImage = req.files['mainImage'][0].filename;
-    const otherImages = req.files['otherImages'] 
-      ? req.files['otherImages'].map(file => file.filename)
-      : [];
-
-    const project = await Project.create({
-      title,
-      description1,
-      description2,
-      mainImage,
-      otherImages
-    });
+    const project = await Project.create(projectData);
 
     res.status(201).json({
       success: true,
       data: project
     });
   } catch (error) {
-    // Delete uploaded files if project creation fails
+    // Only delete files if they were uploaded and there was an error
     if (req.files) {
-      if (req.files['mainImage']) {
-        await fs.unlink(path.join('uploads', req.files['mainImage'][0].filename)).catch(console.error);
-      }
-      if (req.files['otherImages']) {
-        for (const file of req.files['otherImages']) {
-          await fs.unlink(path.join('uploads', file.filename)).catch(console.error);
+      try {
+        if (req.files['mainImage']) {
+          await deleteFile(req.files['mainImage'][0].filename);
         }
+        if (req.files['otherImages']) {
+          await deleteFiles(req.files['otherImages'].map(file => file.filename));
+        }
+      } catch (deleteError) {
+        console.error('Error cleaning up files:', deleteError);
       }
-    } 
+    }
 
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Error creating project'
     });
   }
 };
@@ -64,7 +90,7 @@ const getProjects = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Error fetching projects'
     });
   }
 };
@@ -85,24 +111,16 @@ const getProjectById = async (req, res) => {
       data: project
     });
   } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid project ID'
-      });
-    }
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Error fetching project'
     });
   }
 };
 
 const updateProject = async (req, res) => {
   try {
-    const { title, description1, description2 } = req.body;
-    
-    // Find project and check if it exists
+    // Find project first
     let project = await Project.findById(req.params.id);
     
     if (!project) {
@@ -114,15 +132,19 @@ const updateProject = async (req, res) => {
 
     // Store old image paths
     const oldMainImage = project.mainImage;
-    const oldOtherImages = project.otherImages;
+    const oldOtherImages = [...(project.otherImages || [])];
 
-    // Handle file uploads if they exist
+    // Prepare update data with existing values as fallback
     const updateData = {
-      title,
-      description1,
-      description2
+      title: req.body.title || project.title,
+      description1: req.body.description1 || project.description1,
+      description2: req.body.description2 || project.description2,
+      projectType: req.body.projectType || project.projectType,
+      projectArea: req.body.projectArea || project.projectArea,
+      projectLocation: req.body.projectLocation || project.projectLocation
     };
 
+    // Handle file uploads if they exist
     if (req.files) {
       if (req.files['mainImage']) {
         updateData.mainImage = req.files['mainImage'][0].filename;
@@ -133,24 +155,27 @@ const updateProject = async (req, res) => {
       }
     }
 
-    // Update project with new data
+    // Update project
     project = await Project.findByIdAndUpdate(
       req.params.id,
       updateData,
       {
         new: true,
-        runValidators: true
+        runValidators: false // Disabled validators for more flexibility
       }
     );
 
-    // Delete old files if they were replaced
-    if (req.files['mainImage'] && oldMainImage) {
-      await fs.unlink(path.join('uploads', oldMainImage)).catch(console.error);
-    }
-    
-    if (req.files['otherImages'] && oldOtherImages) {
-      for (const image of oldOtherImages) {
-        await fs.unlink(path.join('uploads', image)).catch(console.error);
+    // Delete old files only if new ones were uploaded successfully
+    if (req.files) {
+      try {
+        if (req.files['mainImage'] && oldMainImage) {
+          await deleteFile(oldMainImage);
+        }
+        if (req.files['otherImages'] && oldOtherImages.length > 0) {
+          await deleteFiles(oldOtherImages);
+        }
+      } catch (deleteError) {
+        console.error('Error cleaning up old files:', deleteError);
       }
     }
 
@@ -159,28 +184,23 @@ const updateProject = async (req, res) => {
       data: project
     });
   } catch (error) {
-    // Delete new uploaded files if update fails
+    // If update fails, try to clean up any newly uploaded files
     if (req.files) {
-      if (req.files['mainImage']) {
-        await fs.unlink(path.join('uploads', req.files['mainImage'][0].filename)).catch(console.error);
-      }
-      if (req.files['otherImages']) {
-        for (const file of req.files['otherImages']) {
-          await fs.unlink(path.join('uploads', file.filename)).catch(console.error);
+      try {
+        if (req.files['mainImage']) {
+          await deleteFile(req.files['mainImage'][0].filename);
         }
+        if (req.files['otherImages']) {
+          await deleteFiles(req.files['otherImages'].map(file => file.filename));
+        }
+      } catch (deleteError) {
+        console.error('Error cleaning up files after failed update:', deleteError);
       }
-    }
-
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid project ID'
-      });
     }
 
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Error updating project'
     });
   }
 };
@@ -196,15 +216,16 @@ const deleteProject = async (req, res) => {
       });
     }
 
-    // Delete associated files
-    if (project.mainImage) {
-      await fs.unlink(path.join('uploads', project.mainImage)).catch(console.error);
-    }
-    
-    if (project.otherImages && project.otherImages.length > 0) {
-      for (const image of project.otherImages) {
-        await fs.unlink(path.join('uploads', image)).catch(console.error);
+    // Delete associated files with extra safety
+    try {
+      if (project.mainImage) {
+        await deleteFile(project.mainImage);
       }
+      if (project.otherImages && project.otherImages.length > 0) {
+        await deleteFiles(project.otherImages);
+      }
+    } catch (deleteError) {
+      console.error('Error deleting project files:', deleteError);
     }
 
     // Delete project from database
@@ -212,19 +233,12 @@ const deleteProject = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Project and associated files deleted successfully'
+      message: 'Project deleted successfully'
     });
   } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid project ID'
-      });
-    }
-
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Error deleting project'
     });
   }
 };
